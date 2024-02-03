@@ -31,6 +31,7 @@
 #include <linux/netfilter/x_tables.h>
 #include <linux/crc32.h>
 #include <linux/math64.h>
+#include <linux/wait.h>
 #ifndef __RE_EXTERNAL
 #include <linux/netfilter/xt_RTPENGINE.h>
 #else
@@ -3268,8 +3269,8 @@ static void del_stream(struct re_stream *stream, struct rtpengine_table *table) 
 	 * they're closed. There can be no new open file references as the stream is set
 	 * to eof. */
 	DBG("del_stream() waiting for other refs\n");
-	while (1) {
-		if (wait_event_interruptible(stream->close_wq, atomic_read(&stream->refcnt) == 2) == 0)
+	while (atomic_read(&stream->refcnt) != 2) {
+		if (wait_event_interruptible_timeout(stream->close_wq, atomic_read(&stream->refcnt) == 2, HZ / 10) == 0)
 			break;
 	}
 
@@ -3345,7 +3346,7 @@ static ssize_t proc_stream_read(struct file *f, char __user *b, size_t l, loff_t
 			goto out;
 		DBG("going to sleep\n");
 		ret = -ERESTARTSYS;
-		if (wait_event_interruptible(stream->read_wq, !list_empty(&stream->packet_list) || stream->eof))
+		if (wait_event_interruptible_timeout(stream->read_wq, !list_empty(&stream->packet_list) || stream->eof, HZ / 10))
 			goto out;
 		DBG("awakened\n");
 		spin_lock_irqsave(&stream->packet_list_lock, flags);
