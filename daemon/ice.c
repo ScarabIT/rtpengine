@@ -743,7 +743,7 @@ static void __agent_deschedule(struct ice_agent *ag) {
 
 void ice_init(void) {
 	random_string((void *) &tie_breaker, sizeof(tie_breaker));
-	timerthread_init(&ice_agents_timer_thread, ice_agents_timer_run);
+	timerthread_init(&ice_agents_timer_thread, 1, ice_agents_timer_run);
 
 	sdp_fragments = g_hash_table_new_full(frag_key_hash, frag_key_eq, fragment_key_free, NULL);
 	mutex_init(&sdp_fragments_lock);
@@ -1527,8 +1527,8 @@ err:
 
 
 
-void ice_thread_run(void *p) {
-	timerthread_run(&ice_agents_timer_thread);
+void ice_thread_launch(void) {
+	timerthread_launch(&ice_agents_timer_thread, NULL, 0, "ICE");
 }
 static void ice_agents_timer_run(void *ptr) {
 	struct ice_agent *ag = ptr;

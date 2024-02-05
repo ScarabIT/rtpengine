@@ -166,7 +166,7 @@ void ice_restart(struct ice_agent *);
 void ice_candidates_free(GQueue *);
 void ice_remote_candidates(GQueue *, struct ice_agent *);
 
-void ice_thread_run(void *);
+void ice_thread_launch(void);
 
 int ice_request(struct stream_fd *, const endpoint_t *, struct stun_attrs *);
 int ice_response(struct stream_fd *, const endpoint_t *src,
