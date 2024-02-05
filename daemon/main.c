@@ -1014,6 +1014,21 @@ static void options(int *argc, char ***argv) {
 			die("Invalid --control-pmtu option ('%s')", control_pmtu);
 	}
 
+	if (rtpe_config.num_threads < 1)
+		rtpe_config.num_threads = num_cpu_cores(4);
+	if (rtpe_config.media_num_threads < 0)
+		rtpe_config.media_num_threads = rtpe_config.num_threads;
+	if (rtpe_config.max_sessions < -1)
+		rtpe_config.max_sessions = -1;
+	if (rtpe_config.redis_num_threads < 1)
+		rtpe_config.redis_num_threads = num_cpu_cores(REDIS_RESTORE_NUM_THREADS);
+
+	if (rtpe_config.cpu_affinity < 0) {
+		rtpe_config.cpu_affinity = num_cpu_cores(0);
+		if (rtpe_config.cpu_affinity <= 0)
+			die("Number of CPU cores is unknown, cannot auto-set socket CPU affinity");
+	}
+
 	rwlock_unlock_w(&rtpe_config.config_lock);
 }
 
@@ -1237,12 +1252,6 @@ no_kernel:
 		abort();
 
         rwlock_init(&rtpe_config.config_lock);
-	if (rtpe_config.max_sessions < -1) {
-		rtpe_config.max_sessions = -1;
-	}
-
-	if (rtpe_config.redis_num_threads < 1)
-		rtpe_config.redis_num_threads = num_cpu_cores(REDIS_RESTORE_NUM_THREADS);
 
 	create_listeners(&rtpe_config.tcp_listen_ep,     &rtpe_tcp,            (void *(*)(const endpoint_t *)) control_tcp_new,    false, "TCP control");
 	create_listeners(&rtpe_config.udp_listen_ep,     &rtpe_udp,            (void *(*)(const endpoint_t *)) control_udp_new,    true,  "UDP control");
