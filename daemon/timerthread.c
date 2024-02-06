@@ -13,6 +13,7 @@ static void timerthread_thread_init(struct timerthread_thread *tt, struct timert
 	mutex_init(&tt->lock);
 	cond_init(&tt->cond);
 	tt->parent = parent;
+	ZERO(tt->next_wake);
 }
 
 void timerthread_init(struct timerthread *tt, unsigned int num, void (*func)(void *)) {
@@ -71,6 +72,7 @@ static void timerthread_run(void *p) {
 		rtpe_now = tt_obj->next_check;
 		ZERO(tt_obj->next_check);
 		tt_obj->last_run = rtpe_now;
+		ZERO(tt->next_wake);
 		mutex_unlock(&tt->lock);
 
 		// run and release
@@ -87,6 +89,7 @@ sleep:;
 		sleeptime = MIN(10000000, sleeptime); /* 100 ms at the most */
 		struct timeval tv = rtpe_now;
 		timeval_add_usec(&tv, sleeptime);
+		tt->next_wake = tv;
 		cond_timedwait(&tt->cond, &tt->lock, &tv);
 	}
 
@@ -113,7 +116,9 @@ void timerthread_obj_schedule_abs_nl(struct timerthread_obj *tt_obj, const struc
 		obj_hold(tt_obj); /* if it wasn't removed, we make a new reference */
 	tt_obj->next_check = *tv;
 	g_tree_insert(tt->tree, tt_obj, tt_obj);
-	cond_signal(&tt->cond);
+	// need to wake the thread?
+	if (tt->next_wake.tv_sec && timeval_cmp(tv, &tt->next_wake) < 0)
+		cond_signal(&tt->cond);
 }
 
 void timerthread_obj_deschedule(struct timerthread_obj *tt_obj) {
