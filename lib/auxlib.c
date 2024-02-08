@@ -473,7 +473,7 @@ void free_gvbuf(char ***p) {
 	g_strfreev(*p);
 }
 
-int g_tree_find_first_cmp(void *k, void *v, void *d) {
+int rtpe_tree_find_first_cmp(void *k, void *v, void *d) {
 	void **p = d;
 	GEqualFunc f = p[1];
 	if (!f || f(v, p[0])) {
@@ -482,7 +482,7 @@ int g_tree_find_first_cmp(void *k, void *v, void *d) {
 	}
 	return FALSE;
 }
-int g_tree_find_all_cmp(void *k, void *v, void *d) {
+int rtpe_tree_find_all_cmp(void *k, void *v, void *d) {
 	void **p = d;
 	GEqualFunc f = p[1];
 	GQueue *q = p[2];
