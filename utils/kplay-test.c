@@ -29,7 +29,6 @@ int main() {
 		.msg_size = {
 			[REMG_NOOP] = sizeof(struct rtpengine_command_noop),
 			[REMG_ADD_TARGET] = sizeof(struct rtpengine_command_add_target),
-			[REMG_DEL_TARGET] = sizeof(struct rtpengine_command_del_target),
 			[REMG_DEL_TARGET_STATS] = sizeof(struct rtpengine_command_del_target_stats),
 			[REMG_ADD_DESTINATION] = sizeof(struct rtpengine_command_destination),
 			[REMG_ADD_CALL] = sizeof(struct rtpengine_command_add_call),
@@ -37,7 +36,6 @@ int main() {
 			[REMG_ADD_STREAM] = sizeof(struct rtpengine_command_add_stream),
 			[REMG_DEL_STREAM] = sizeof(struct rtpengine_command_del_stream),
 			[REMG_PACKET] = sizeof(struct rtpengine_command_packet),
-			[REMG_GET_STATS] = sizeof(struct rtpengine_command_stats),
 			[REMG_GET_RESET_STATS] = sizeof(struct rtpengine_command_stats),
 			[REMG_SEND_RTCP] = sizeof(struct rtpengine_command_send_packet),
 			[REMG_INIT_PLAY_STREAMS] = sizeof(struct rtpengine_command_init_play_streams),
