@@ -4051,6 +4051,8 @@ static int timer_worker(void *p) {
 					play_stream_schedule_packet(stream);
 					sleeptime_ns = 0; // loop and get next packet from tree
 					spin_unlock(&stream->lock);
+					unref_play_stream(stream);
+					stream = NULL;
 				}
 				else {
 					// end of stream, remove it
