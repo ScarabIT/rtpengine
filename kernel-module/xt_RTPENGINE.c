@@ -3821,6 +3821,17 @@ static void unref_packet_stream(struct play_stream_packets *stream) {
 		free_packet_stream(stream);
 }
 
+#define unref_play_stream(s) do { \
+	printk(KERN_ERR "unref play stream %p (%i--) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); \
+	__unref_play_stream(s); \
+} while (0)
+
+#define ref_play_stream(s) do { \
+	printk(KERN_ERR "ref play stream %p (%i++) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); \
+	atomic_inc(&(s)->refcnt); \
+} while (0)
+
+
 // stream must be locked and started
 static ktime_t play_stream_packet_time(struct play_stream *stream, struct play_stream_packet *packet) {
 	return ktime_add(stream->start_time, packet->delay);
@@ -3879,7 +3890,7 @@ static void play_stream_schedule_packet_to_thread(struct play_stream *stream, st
 			// we're after, schedule in tree
 			//printk(KERN_WARNING "inserting into tree\n");
 			play_stream_insert_packet_to_tree(stream, tt, scheduled);
-			atomic_inc(&stream->refcnt);
+			ref_play_stream(stream);
 			if (sleeper)
 				tt->tree_added = true;
 		}
@@ -3888,7 +3899,7 @@ static void play_stream_schedule_packet_to_thread(struct play_stream *stream, st
 			//printk(KERN_WARNING "putting as next, returning previous to tree\n");
 			play_stream_insert_packet_to_tree(tt->scheduled, tt, tt->scheduled_at);
 			tt->scheduled = stream;
-			atomic_inc(&stream->refcnt);
+			ref_play_stream(stream);
 			tt->scheduled_at = scheduled;
 			if (!sleeper)
 				tt->tree_added = true;
@@ -3898,7 +3909,7 @@ static void play_stream_schedule_packet_to_thread(struct play_stream *stream, st
 		// nothing scheduled yet, we are next
 		//printk(KERN_WARNING "putting as next\n");
 		tt->scheduled = stream;
-		atomic_inc(&stream->refcnt);
+		ref_play_stream(stream);
 		tt->scheduled_at = scheduled;
 		if (!sleeper)
 			tt->tree_added = true;
@@ -3975,8 +3986,7 @@ static void free_play_stream(struct play_stream *s) {
 	kfree(s);
 }
 
-static void unref_play_stream(struct play_stream *s) {
-	printk(KERN_ERR "unref play stream %p\n", s);
+static void __unref_play_stream(struct play_stream *s) {
 	if (atomic_dec_and_test(&s->refcnt))
 		free_play_stream(s);
 }
@@ -4398,7 +4408,7 @@ static int play_stream(struct rtpengine_table *t, const struct rtpengine_play_st
 			continue;
 		}
 		play_streams[idx] = play_stream;
-		atomic_inc(&play_stream->refcnt);
+		ref_play_stream(play_stream);
 		play_stream->idx = idx;
 		write_unlock(&media_player_lock);
 		break;
@@ -4419,7 +4429,7 @@ static int play_stream(struct rtpengine_table *t, const struct rtpengine_play_st
 
 	spin_lock(&t->player_lock);
 	list_add(&play_stream->table_entry, &t->play_streams);
-	atomic_inc(&play_stream->refcnt);
+	ref_play_stream(play_stream);
 	t->num_play_streams++;
 	// XXX race between adding to list and stop/free?
 	spin_unlock(&t->player_lock);
@@ -4469,12 +4479,14 @@ static void do_stop_stream(struct play_stream *stream) {
 		spin_lock(&tt->tree_lock);
 
 		if (tt->scheduled == stream) {
+			printk(KERN_ERR "stream %p was scheduled\n", stream);
 			tt->scheduled = NULL;
 			unref_play_stream(stream);
 		}
 		else {
 			old_stream = btree_lookup64(&tt->tree, stream->tree_index);
 			if (old_stream == stream) {
+				printk(KERN_ERR "stream %p was in tree\n", stream);
 				btree_remove64(&tt->tree, stream->tree_index);
 				unref_play_stream(stream);
 			}
