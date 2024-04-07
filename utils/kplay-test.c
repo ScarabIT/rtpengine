@@ -285,6 +285,7 @@ int main() {
 		.packet_stream_idx = gps.packet_stream_idx,
 	};
 	ret = write(fd, &fps, sizeof(fps));
+	printf("%zi %s\n", ret, strerror(errno));
 	assert(ret == sizeof(fps));
 	printf("free ok\n");
 

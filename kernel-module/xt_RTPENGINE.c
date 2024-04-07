@@ -528,8 +528,8 @@ struct play_stream_packets {
 };
 
 struct play_stream {
-	// XXX refcount this?
 	spinlock_t lock;
+	atomic_t refcnt;
 	unsigned int idx;
 	struct rtpengine_play_stream_info info;
 	struct re_crypto_context encrypt;
@@ -3797,10 +3797,10 @@ static void free_packet_stream(struct play_stream_packets *stream) {
 	struct play_stream_packet *packet, *tp;
 	struct rtpengine_table *t;
 
-	//printk(KERN_WARNING "freeing packet stream %p\n", stream);
+	printk(KERN_WARNING "freeing packet stream %p\n", stream);
 
-	list_for_each_entry_safe(packet, tp, &stream->packets, list)
-		free_play_stream_packet(packet);
+//	list_for_each_entry_safe(packet, tp, &stream->packets, list)
+//		free_play_stream_packet(packet);
 
 	if (stream->table_id != -1 && !list_empty(&stream->table_entry)) {
 		t = get_table(stream->table_id);
@@ -3812,10 +3812,11 @@ static void free_packet_stream(struct play_stream_packets *stream) {
 			table_put(t);
 		}
 	}
-	kfree(stream);
+//	kfree(stream);
 }
 
 static void unref_packet_stream(struct play_stream_packets *stream) {
+	printk(KERN_WARNING "unref packet stream %p\n", stream);
 	if (atomic_dec_and_test(&stream->refcnt))
 		free_packet_stream(stream);
 }
@@ -3878,6 +3879,7 @@ static void play_stream_schedule_packet_to_thread(struct play_stream *stream, st
 			// we're after, schedule in tree
 			//printk(KERN_WARNING "inserting into tree\n");
 			play_stream_insert_packet_to_tree(stream, tt, scheduled);
+			atomic_inc(&stream->refcnt);
 			if (sleeper)
 				tt->tree_added = true;
 		}
@@ -3886,6 +3888,7 @@ static void play_stream_schedule_packet_to_thread(struct play_stream *stream, st
 			//printk(KERN_WARNING "putting as next, returning previous to tree\n");
 			play_stream_insert_packet_to_tree(tt->scheduled, tt, tt->scheduled_at);
 			tt->scheduled = stream;
+			atomic_inc(&stream->refcnt);
 			tt->scheduled_at = scheduled;
 			if (!sleeper)
 				tt->tree_added = true;
@@ -3895,6 +3898,7 @@ static void play_stream_schedule_packet_to_thread(struct play_stream *stream, st
 		// nothing scheduled yet, we are next
 		//printk(KERN_WARNING "putting as next\n");
 		tt->scheduled = stream;
+		atomic_inc(&stream->refcnt);
 		tt->scheduled_at = scheduled;
 		if (!sleeper)
 			tt->tree_added = true;
@@ -3915,7 +3919,7 @@ static void play_stream_schedule_packet(struct play_stream *stream) {
 
 	// XXX check if already scheduled
 	read_lock(&media_player_lock);
-	idx = atomic_add_return(1, &last_timer_thread_idx) % num_timer_threads;
+	idx = atomic_fetch_add(1, &last_timer_thread_idx) % num_timer_threads;
 	tt = timer_threads[idx];
 	read_unlock(&media_player_lock);
 
@@ -3963,13 +3967,27 @@ static void play_stream_send_packet(struct play_stream *stream, struct play_stre
 	stream->stats.packets++;
 }
 
+static void free_play_stream(struct play_stream *s) {
+	printk(KERN_WARNING "freeing play stream %p\n", s);
+	free_crypto_context(&s->encrypt);
+	if (s->packets)
+		unref_packet_stream(s->packets);
+	kfree(s);
+}
+
+static void unref_play_stream(struct play_stream *s) {
+	printk(KERN_ERR "unref play stream %p\n", s);
+	if (atomic_dec_and_test(&s->refcnt))
+		free_play_stream(s);
+}
+
 static int timer_worker(void *p) {
 	struct timer_thread *tt = p;
 
 	//printk(KERN_WARNING "cpu %u running\n", smp_processor_id());
 	while (!atomic_read(&tt->shutdown)) {
 		int64_t timer_scheduled;
-		struct play_stream *stream, *old_stream;
+		struct play_stream *stream;
 		ktime_t now, packet_scheduled;
 		int64_t sleeptime_ns;
 		struct play_stream_packet *packet;
@@ -3985,7 +4003,6 @@ static int timer_worker(void *p) {
 			stream = btree_last64(&tt->tree, &timer_scheduled);
 			if (stream)
 				btree_remove64(&tt->tree, timer_scheduled);
-			// XXX refcount stream?
 		}
 		else {
 			tt->scheduled = NULL;
@@ -4029,12 +4046,15 @@ static int timer_worker(void *p) {
 					// end of stream, remove it
 					// XXX don't remove, keep idx alive for get_stats
 					spin_unlock(&stream->lock);
-					read_lock(&media_player_lock);
-					old_stream = cmpxchg(&play_streams[stream->idx], stream, NULL);
-					read_unlock(&media_player_lock);
-					if (old_stream)
-						free_play_stream(old_stream);
+					write_lock(&media_player_lock);
+					if (play_streams[stream->idx] == stream) {
+						play_streams[stream->idx] = NULL;
+						unref_play_stream(stream);
+					}
 					// else log error?
+					write_unlock(&media_player_lock);
+					unref_play_stream(stream);
+					stream = NULL;
 				}
 			}
 			else {
@@ -4052,6 +4072,8 @@ static int timer_worker(void *p) {
 				play_stream_schedule_packet_to_thread(stream, tt, true);
 				spin_unlock(&stream->lock);
 				sleeptime_ns = min(sleeptime_ns, ns_diff);
+				unref_play_stream(stream);
+				stream = NULL;
 			}
 		}
 
@@ -4211,7 +4233,8 @@ static int get_packet_stream(struct rtpengine_table *t, unsigned int *num) {
 	for (i = 0; i < num_stream_packets; i++) {
 		struct play_stream_packets *old_stream;
 		read_lock(&media_player_lock);
-		idx = atomic_add_return(1, &last_stream_packets_idx) % num_stream_packets;
+		idx = atomic_fetch_add(1, &last_stream_packets_idx) % num_stream_packets;
+		// XXX use write lock
 		old_stream = cmpxchg(&stream_packets[idx], NULL, new_stream);
 		read_unlock(&media_player_lock);
 		if (!old_stream)
@@ -4300,27 +4323,6 @@ out:
 	return ret;
 }
 
-static void free_play_stream(struct play_stream *s) {
-	struct rtpengine_table *t;
-
-	//printk(KERN_WARNING "freeing play stream %p\n", s);
-	free_crypto_context(&s->encrypt);
-	if (s->packets)
-		unref_packet_stream(s->packets);
-
-	if (s->table_id != -1 && !list_empty(&s->table_entry)) {
-		t = get_table(s->table_id);
-		if (t) {
-			spin_lock(&t->player_lock);
-			list_del_init(&s->table_entry);
-			t->num_play_streams--;
-			spin_unlock(&t->player_lock);
-			table_put(t);
-		}
-	}
-	kfree(s);
-}
-
 static int play_stream(struct rtpengine_table *t, const struct rtpengine_play_stream_info *info, unsigned int *num) {
 	struct play_stream *play_stream;
 	struct play_stream_packets *packets = NULL;
@@ -4345,6 +4347,7 @@ static int play_stream(struct rtpengine_table *t, const struct rtpengine_play_st
 	INIT_LIST_HEAD(&play_stream->table_entry);
 	play_stream->info = *info;
 	play_stream->table_id = t->id;
+	atomic_set(&play_stream->refcnt, 1);
 
 	ret = 0;
 
@@ -4387,22 +4390,23 @@ static int play_stream(struct rtpengine_table *t, const struct rtpengine_play_st
 	packets = NULL; // ref handed over
 
 	for (i = 0; i < num_play_streams; i++) {
-		struct play_stream *old_stream;
-		read_lock(&media_player_lock);
-		idx = atomic_add_return(1, &last_play_stream_idx) % num_play_streams;
-		old_stream = cmpxchg(&play_streams[idx], NULL, play_stream);
-		read_unlock(&media_player_lock);
-		if (!old_stream) {
-			play_stream->idx = idx;
-			break;
+		write_lock(&media_player_lock);
+		idx = atomic_fetch_add(1, &last_play_stream_idx) % num_play_streams;
+		if (play_streams[idx]) {
+			write_unlock(&media_player_lock);
+			idx = -1;
+			continue;
 		}
-		idx = -1;
+		play_streams[idx] = play_stream;
+		atomic_inc(&play_stream->refcnt);
+		play_stream->idx = idx;
+		write_unlock(&media_player_lock);
+		break;
 	}
 
-	if (idx == -1) {
-		free_play_stream(play_stream);
-		return -EBUSY;
-	}
+	ret = -EBUSY;
+	if (idx == -1)
+		goto out;
 
 	spin_lock(&play_stream->lock);
 
@@ -4415,6 +4419,7 @@ static int play_stream(struct rtpengine_table *t, const struct rtpengine_play_st
 
 	spin_lock(&t->player_lock);
 	list_add(&play_stream->table_entry, &t->play_streams);
+	atomic_inc(&play_stream->refcnt);
 	t->num_play_streams++;
 	// XXX race between adding to list and stop/free?
 	spin_unlock(&t->player_lock);
@@ -4422,52 +4427,72 @@ static int play_stream(struct rtpengine_table *t, const struct rtpengine_play_st
 	play_stream_schedule_packet(play_stream);
 
 	spin_unlock(&play_stream->lock);
-	play_stream = NULL; // XXX ref
 
 	*num = idx;
 	ret = 0;
 
 out:
 	if (play_stream)
-		free_play_stream(play_stream);
+		unref_play_stream(play_stream);
 	if (packets)
 		unref_packet_stream(packets);
 	return ret;
 }
 
+static void end_of_stream(struct play_stream *stream) {
+	struct rtpengine_table *t;
+
+	if (stream->table_id != -1 && !list_empty(&stream->table_entry)) {
+		t = get_table(stream->table_id);
+		if (t) {
+			spin_lock(&t->player_lock);
+			list_del_init(&stream->table_entry);
+			t->num_play_streams--;
+			spin_unlock(&t->player_lock);
+			table_put(t);
+			unref_play_stream(stream);
+		}
+	}
+	stream->table_id = -1;
+}
+
 static void do_stop_stream(struct play_stream *stream) {
-	struct play_stream *old_stream;
 	struct timer_thread *tt;
+	struct play_stream *old_stream;
 
 	spin_lock(&stream->lock);
+
+	end_of_stream(stream);
 
 	tt = stream->timer_thread;
 	if (tt) {
 		spin_lock(&tt->tree_lock);
 
-		if (tt->scheduled == stream)
+		if (tt->scheduled == stream) {
 			tt->scheduled = NULL;
+			unref_play_stream(stream);
+		}
 		else {
 			old_stream = btree_lookup64(&tt->tree, stream->tree_index);
-			if (old_stream == stream)
+			if (old_stream == stream) {
 				btree_remove64(&tt->tree, stream->tree_index);
+				unref_play_stream(stream);
+			}
 		}
 
 		spin_unlock(&tt->tree_lock);
 	}
 
 	spin_unlock(&stream->lock);
-
-	free_play_stream(stream);
 }
 
 static int stop_stream(struct rtpengine_table *t, unsigned int num) {
-	struct play_stream *stream, *old_stream;
+	struct play_stream *stream;
 	int ret;
 
 	ret = 0;
 
-	read_lock(&media_player_lock);
+	write_lock(&media_player_lock);
 
 	if (num >= num_play_streams)
 		ret = -ERANGE;
@@ -4475,19 +4500,17 @@ static int stop_stream(struct rtpengine_table *t, unsigned int num) {
 		stream = play_streams[num];
 		if (!stream)
 			ret = -ENOENT;
-		else {
-			old_stream = cmpxchg(&play_streams[num], stream, NULL);
-			if (old_stream != stream)
-				ret = -ENOENT;
-		}
+		else
+			play_streams[num] = NULL;;
 	}
 
-	read_unlock(&media_player_lock);
+	write_unlock(&media_player_lock);
 
 	if (ret)
 		return ret;
 
 	do_stop_stream(stream);
+	unref_play_stream(stream);
 
 	return 0;
 }
