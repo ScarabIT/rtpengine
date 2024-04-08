@@ -122,8 +122,14 @@ int main() {
 		usleep(50000);
 	}
 
+	printf("sleep\n");
+	sleep(10);
+
+	printf("close fd, sleep\n");
+	sleep(10);
 	close(fd);
 
+	printf("del table\n");
 	fd = open("/proc/rtpengine/control", O_WRONLY);
 	assert(fd >= 0);
 	ret = write(fd, "del 0\n", 6);

@@ -525,6 +525,7 @@ struct play_stream_packets {
 	unsigned int table_id;
 	struct list_head table_entry;
 	atomic_t removed;
+	unsigned int idx;
 };
 
 struct play_stream {
@@ -1057,15 +1058,35 @@ static void clear_table_proc_files(struct rtpengine_table *t) {
 static void clear_table_player(struct rtpengine_table *t) {
 	struct play_stream *stream, *ts;
 	struct play_stream_packets *packets, *tp;
+	unsigned int idx;
 
 	list_for_each_entry_safe(stream, ts, &t->play_streams, table_entry) {
+		spin_lock(&stream->lock);
 		stream->table_id = -1;
+		idx = stream->idx;
+		spin_unlock(&stream->lock);
+		write_lock(&media_player_lock);
+		if (play_streams[idx] == stream) {
+			play_streams[idx] = NULL;
+			unref_play_stream(stream);
+		}
+		write_unlock(&media_player_lock);
 		do_stop_stream(stream);
 		unref_play_stream(stream);
 	}
 
 	list_for_each_entry_safe(packets, tp, &t->packet_streams, table_entry) {
+		atomic_set(&packets->removed, 1);
+		write_lock(&packets->lock);
 		packets->table_id = -1;
+		idx = packets->idx;
+		write_unlock(&packets->lock);
+		write_lock(&media_player_lock);
+		if (stream_packets[idx] == packets) {
+			stream_packets[idx] = NULL;
+			unref_packet_stream(packets);
+		}
+		write_unlock(&media_player_lock);
 		unref_packet_stream(packets);
 	}
 }
@@ -4255,15 +4276,17 @@ static int get_packet_stream(struct rtpengine_table *t, unsigned int *num) {
 	atomic_set(&new_stream->removed, 0);
 
 	for (i = 0; i < num_stream_packets; i++) {
-		struct play_stream_packets *old_stream;
-		read_lock(&media_player_lock);
+		write_lock(&media_player_lock);
 		idx = atomic_fetch_add(1, &last_stream_packets_idx) % num_stream_packets;
-		// XXX use write lock
-		old_stream = cmpxchg(&stream_packets[idx], NULL, new_stream);
-		read_unlock(&media_player_lock);
-		if (!old_stream)
-			break;
-		idx = -1;
+		if (stream_packets[idx]) {
+			idx = -1;
+			write_unlock(&media_player_lock);
+			continue;
+		}
+		stream_packets[idx] = new_stream;
+		new_stream->idx = idx;
+		write_unlock(&media_player_lock);
+		break;
 	}
 
 	if (idx == -1) {
@@ -4562,10 +4585,10 @@ static int stop_stream(struct rtpengine_table *t, unsigned int num) {
 }
 
 static int cmd_free_packet_stream(struct rtpengine_table *t, unsigned int idx) {
-	struct play_stream_packets *stream, *old_stream = NULL;
+	struct play_stream_packets *stream;
 	int ret;
 
-	read_lock(&media_player_lock);
+	write_lock(&media_player_lock);
 
 	ret = -ERANGE;
 	if (idx >= num_stream_packets)
@@ -4588,19 +4611,15 @@ static int cmd_free_packet_stream(struct rtpengine_table *t, unsigned int idx) {
 	if (atomic_read(&stream->refcnt) != 1)
 		goto out;
 
-	old_stream = cmpxchg(&stream_packets[idx], stream, NULL);
-
-	ret = -ELOOP;
-	if (old_stream != stream)
-		goto out; // old_stream == NULL
+	stream_packets[idx] = NULL;
 
 	ret = 0;
 
 out:
-	read_unlock(&media_player_lock);
+	write_unlock(&media_player_lock);
 
-	if (old_stream)
-		unref_packet_stream(old_stream);
+	if (ret == 0)
+		unref_packet_stream(stream);
 
 	return ret;
 }
