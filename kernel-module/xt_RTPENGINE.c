@@ -1033,7 +1033,7 @@ static void clear_proc(struct proc_dir_entry **e) {
 
 
 static void __unref_play_stream(struct play_stream *s);
-static void unref_packet_stream(struct play_stream_packets *stream);
+static void __unref_packet_stream(struct play_stream_packets *stream);
 static void end_of_stream(struct play_stream *stream);
 
 #define unref_play_stream(s) do { \
@@ -1044,6 +1044,16 @@ static void end_of_stream(struct play_stream *stream);
 #define ref_play_stream(s) do { \
 	/* printk(KERN_WARNING "ref play stream %p (%i++) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); */ \
 	atomic_inc(&(s)->refcnt); \
+} while (0)
+
+#define ref_packet_stream(s) do { \
+	/* printk(KERN_WARNING "ref packet stream %p (%i++) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); */ \
+	atomic_inc(&(s)->refcnt); \
+} while (0)
+
+#define unref_packet_stream(s) do { \
+	printk(KERN_WARNING "unref packet stream %p (%i--) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); \
+	__unref_packet_stream(s); \
 } while (0)
 
 static void clear_table_proc_files(struct rtpengine_table *t) {
@@ -3850,7 +3860,7 @@ static void free_packet_stream(struct play_stream_packets *stream) {
 	kfree(stream);
 }
 
-static void unref_packet_stream(struct play_stream_packets *stream) {
+static void __unref_packet_stream(struct play_stream_packets *stream) {
 	printk(KERN_WARNING "unref packet stream %p\n", stream);
 	if (atomic_dec_and_test(&stream->refcnt))
 		free_packet_stream(stream);
@@ -4285,6 +4295,7 @@ static int get_packet_stream(struct rtpengine_table *t, unsigned int *num) {
 		}
 		stream_packets[idx] = new_stream;
 		new_stream->idx = idx;
+		ref_packet_stream(new_stream);
 		write_unlock(&media_player_lock);
 		break;
 	}
@@ -4296,6 +4307,8 @@ static int get_packet_stream(struct rtpengine_table *t, unsigned int *num) {
 
 	spin_lock(&t->player_lock);
 	list_add(&new_stream->table_entry, &t->packet_streams);
+	// hand over ref
+	new_stream = NULL;
 	t->num_packet_streams++;
 	// XXX race between adding to list and stop/free?
 	spin_unlock(&t->player_lock);
@@ -4407,7 +4420,7 @@ static int play_stream(struct rtpengine_table *t, const struct rtpengine_play_st
 		if (!packets)
 			ret = -ENOENT;
 		else {
-			atomic_inc(&packets->refcnt);
+			ref_packet_stream(packets);
 			if (atomic_read(&packets->removed)) {
 				// whoops - lost race against cmd_free_packet_stream
 				// XXX might lead to leftover entries / refcount leak?
@@ -4510,7 +4523,7 @@ static void do_stop_stream(struct play_stream *stream) {
 	struct timer_thread *tt;
 	struct play_stream *old_stream;
 
-	printk(KERN_ERR "stop stream %p\n", stream);
+	printk(KERN_WARNING "stop stream %p\n", stream);
 
 	spin_lock(&stream->lock);
 
