@@ -524,7 +524,6 @@ struct play_stream_packets {
 	unsigned int len;
 	unsigned int table_id;
 	struct list_head table_entry;
-	atomic_t removed;
 	unsigned int idx;
 };
 
@@ -1086,7 +1085,6 @@ static void clear_table_player(struct rtpengine_table *t) {
 	}
 
 	list_for_each_entry_safe(packets, tp, &t->packet_streams, table_entry) {
-		atomic_set(&packets->removed, 1);
 		write_lock(&packets->lock);
 		packets->table_id = -1;
 		idx = packets->idx;
@@ -3861,7 +3859,6 @@ static void free_packet_stream(struct play_stream_packets *stream) {
 }
 
 static void __unref_packet_stream(struct play_stream_packets *stream) {
-	printk(KERN_WARNING "unref packet stream %p\n", stream);
 	if (atomic_dec_and_test(&stream->refcnt))
 		free_packet_stream(stream);
 }
@@ -4283,7 +4280,6 @@ static int get_packet_stream(struct rtpengine_table *t, unsigned int *num) {
 	rwlock_init(&new_stream->lock);
 	new_stream->table_id = t->id;
 	atomic_set(&new_stream->refcnt, 1);
-	atomic_set(&new_stream->removed, 0);
 
 	for (i = 0; i < num_stream_packets; i++) {
 		write_lock(&media_player_lock);
@@ -4419,14 +4415,8 @@ static int play_stream(struct rtpengine_table *t, const struct rtpengine_play_st
 		packets = stream_packets[info->packet_stream_idx];
 		if (!packets)
 			ret = -ENOENT;
-		else {
+		else
 			ref_packet_stream(packets);
-			if (atomic_read(&packets->removed)) {
-				// whoops - lost race against cmd_free_packet_stream
-				// XXX might lead to leftover entries / refcount leak?
-				ret = -EBUSY;
-			}
-		}
 	}
 
 	read_unlock(&media_player_lock);
@@ -4598,7 +4588,7 @@ static int stop_stream(struct rtpengine_table *t, unsigned int num) {
 }
 
 static int cmd_free_packet_stream(struct rtpengine_table *t, unsigned int idx) {
-	struct play_stream_packets *stream;
+	struct play_stream_packets *stream = NULL;
 	int ret;
 
 	write_lock(&media_player_lock);
@@ -4612,18 +4602,7 @@ static int cmd_free_packet_stream(struct rtpengine_table *t, unsigned int idx) {
 	if (!stream)
 		goto out;
 
-	ret = -EBUSY;
-	if (atomic_read(&stream->refcnt) != 1)
-		goto out;
-
-	// mark as removed before refcount check to avoid race against play_stream()
-	atomic_set(&stream->removed, 1);
-
-	// now check again XXX leaves `removed` as set
-	ret = -EBUSY;
-	if (atomic_read(&stream->refcnt) != 1)
-		goto out;
-
+	// steal reference
 	stream_packets[idx] = NULL;
 
 	ret = 0;
@@ -4631,10 +4610,34 @@ static int cmd_free_packet_stream(struct rtpengine_table *t, unsigned int idx) {
 out:
 	write_unlock(&media_player_lock);
 
-	if (ret == 0)
-		unref_packet_stream(stream);
+	if (!stream)
+		return ret;
 
-	return ret;
+	write_lock(&stream->lock);
+	idx = stream->idx;
+	write_unlock(&stream->lock);
+
+	if (idx != -1) {
+		write_lock(&media_player_lock);
+		if (stream_packets[idx] == stream) {
+			stream_packets[idx] = NULL;
+			unref_packet_stream(stream);
+		}
+		write_unlock(&media_player_lock);
+	}
+
+	if (!list_empty(&stream->table_entry)) {
+		spin_lock(&t->player_lock);
+		list_del_init(&stream->table_entry);
+		t->num_packet_streams--;
+		spin_unlock(&t->player_lock);
+		table_put(t);
+		unref_packet_stream(stream);
+	}
+
+	unref_packet_stream(stream);
+
+	return 0;
 }
 
 static int play_stream_stats(struct rtpengine_table *t, unsigned int num, struct rtpengine_rtp_stats *stats) {
