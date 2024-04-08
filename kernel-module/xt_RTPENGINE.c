@@ -1036,12 +1036,12 @@ static void unref_packet_stream(struct play_stream_packets *stream);
 static void end_of_stream(struct play_stream *stream);
 
 #define unref_play_stream(s) do { \
-	printk(KERN_WARNING "unref play stream %p (%i--) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); \
+	/* printk(KERN_WARNING "unref play stream %p (%i--) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); */ \
 	__unref_play_stream(s); \
 } while (0)
 
 #define ref_play_stream(s) do { \
-	printk(KERN_WARNING "ref play stream %p (%i++) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); \
+	/* printk(KERN_WARNING "ref play stream %p (%i++) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); */ \
 	atomic_inc(&(s)->refcnt); \
 } while (0)
 
