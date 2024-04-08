@@ -201,7 +201,7 @@ int main() {
 	ret = write(fd, &fps, sizeof(fps));
 	assert(ret == -1 && errno == EBUSY);
 
-	sleep(17);
+	sleep(20);
 
 	struct rtpengine_command_stop_stream ss = {
 		.cmd = REMG_STOP_STREAM,

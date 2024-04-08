@@ -1031,6 +1031,19 @@ static void clear_proc(struct proc_dir_entry **e) {
 
 
 
+static void __unref_play_stream(struct play_stream *s);
+static void unref_packet_stream(struct play_stream_packets *stream);
+static void end_of_stream(struct play_stream *stream);
+
+#define unref_play_stream(s) do { \
+	printk(KERN_ERR "unref play stream %p (%i--) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); \
+	__unref_play_stream(s); \
+} while (0)
+
+#define ref_play_stream(s) do { \
+	printk(KERN_ERR "ref play stream %p (%i++) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); \
+	atomic_inc(&(s)->refcnt); \
+} while (0)
 
 static void clear_table_proc_files(struct rtpengine_table *t) {
 	clear_proc(&t->proc_status);
@@ -1048,11 +1061,12 @@ static void clear_table_player(struct rtpengine_table *t) {
 	list_for_each_entry_safe(stream, ts, &t->play_streams, table_entry) {
 		stream->table_id = -1;
 		do_stop_stream(stream);
+		unref_play_stream(stream);
 	}
 
 	list_for_each_entry_safe(packets, tp, &t->packet_streams, table_entry) {
 		packets->table_id = -1;
-		free_packet_stream(packets);
+		unref_packet_stream(packets);
 	}
 }
 
@@ -3821,16 +3835,6 @@ static void unref_packet_stream(struct play_stream_packets *stream) {
 		free_packet_stream(stream);
 }
 
-#define unref_play_stream(s) do { \
-	printk(KERN_ERR "unref play stream %p (%i--) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); \
-	__unref_play_stream(s); \
-} while (0)
-
-#define ref_play_stream(s) do { \
-	printk(KERN_ERR "ref play stream %p (%i++) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); \
-	atomic_inc(&(s)->refcnt); \
-} while (0)
-
 
 // stream must be locked and started
 static ktime_t play_stream_packet_time(struct play_stream *stream, struct play_stream_packet *packet) {
@@ -4057,6 +4061,7 @@ static int timer_worker(void *p) {
 				else {
 					// end of stream, remove it
 					// XXX don't remove, keep idx alive for get_stats
+					end_of_stream(stream);
 					spin_unlock(&stream->lock);
 					write_lock(&media_player_lock);
 					if (play_streams[stream->idx] == stream) {
@@ -4451,12 +4456,14 @@ out:
 	return ret;
 }
 
+// stream must be locked, reference must be held
 static void end_of_stream(struct play_stream *stream) {
 	struct rtpengine_table *t;
 
 	if (stream->table_id != -1 && !list_empty(&stream->table_entry)) {
 		t = get_table(stream->table_id);
 		if (t) {
+			printk(KERN_ERR "removing stream %p from table\n", stream);
 			spin_lock(&t->player_lock);
 			list_del_init(&stream->table_entry);
 			t->num_play_streams--;
@@ -4468,9 +4475,12 @@ static void end_of_stream(struct play_stream *stream) {
 	stream->table_id = -1;
 }
 
+// stream lock is not held, reference must be held
 static void do_stop_stream(struct play_stream *stream) {
 	struct timer_thread *tt;
 	struct play_stream *old_stream;
+
+	printk(KERN_ERR "stop stream %p\n", stream);
 
 	spin_lock(&stream->lock);
 
