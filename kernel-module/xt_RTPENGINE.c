@@ -1036,12 +1036,12 @@ static void unref_packet_stream(struct play_stream_packets *stream);
 static void end_of_stream(struct play_stream *stream);
 
 #define unref_play_stream(s) do { \
-	printk(KERN_ERR "unref play stream %p (%i--) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); \
+	printk(KERN_WARNING "unref play stream %p (%i--) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); \
 	__unref_play_stream(s); \
 } while (0)
 
 #define ref_play_stream(s) do { \
-	printk(KERN_ERR "ref play stream %p (%i++) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); \
+	printk(KERN_WARNING "ref play stream %p (%i++) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); \
 	atomic_inc(&(s)->refcnt); \
 } while (0)
 
@@ -4500,17 +4500,19 @@ static void do_stop_stream(struct play_stream *stream) {
 		spin_lock(&tt->tree_lock);
 
 		if (tt->scheduled == stream) {
-			printk(KERN_ERR "stream %p was scheduled\n", stream);
+			printk(KERN_WARNING "stream %p was scheduled\n", stream);
 			tt->scheduled = NULL;
 			unref_play_stream(stream);
 		}
 		else {
 			old_stream = btree_lookup64(&tt->tree, stream->tree_index);
 			if (old_stream == stream) {
-				printk(KERN_ERR "stream %p was in tree\n", stream);
+				printk(KERN_WARNING "stream %p was in tree\n", stream);
 				btree_remove64(&tt->tree, stream->tree_index);
 				unref_play_stream(stream);
 			}
+			else
+				printk(KERN_ERR "stream %p not scheduled!\n", stream);
 		}
 
 		spin_unlock(&tt->tree_lock);
@@ -4543,6 +4545,17 @@ static int stop_stream(struct rtpengine_table *t, unsigned int num) {
 		return ret;
 
 	do_stop_stream(stream);
+
+	// check if stream was released, wait if it wasn't
+	spin_lock(&stream->lock);
+	while (stream->timer_thread) {
+		spin_unlock(&stream->lock);
+		cpu_relax();
+		schedule();
+		spin_lock(&stream->lock);
+	}
+	spin_unlock(&stream->lock);
+
 	unref_play_stream(stream);
 
 	return 0;
