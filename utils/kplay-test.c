@@ -186,6 +186,7 @@ int main() {
 	};
 	ret = write(fd, &fps, sizeof(fps));
 	assert(ret == -1 && errno == ERANGE);
+	printf("ok\n");
 
 	fps = (__typeof(fps)) {
 		.cmd = REMG_FREE_PACKET_STREAM,
@@ -193,6 +194,7 @@ int main() {
 	};
 	ret = write(fd, &fps, sizeof(fps));
 	assert(ret == -1 && errno == ENOENT);
+	printf("ok\n");
 
 	fps = (__typeof(fps)) {
 		.cmd = REMG_FREE_PACKET_STREAM,
@@ -200,7 +202,9 @@ int main() {
 	};
 	ret = write(fd, &fps, sizeof(fps));
 	assert(ret == -1 && errno == EBUSY);
+	printf("ok\n");
 
+	printf("sleep\n");
 	sleep(20);
 
 	struct rtpengine_command_stop_stream ss = {
@@ -242,6 +246,7 @@ int main() {
 	assert(ret == sizeof(ps));
 	printf("play stream idx %u\n", ps.play_idx);
 
+	printf("sleep\n");
 	sleep(2);
 
 	fps = (__typeof(fps)) {

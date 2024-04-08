@@ -4496,7 +4496,7 @@ static void end_of_stream(struct play_stream *stream) {
 	if (stream->table_id != -1 && !list_empty(&stream->table_entry)) {
 		t = get_table(stream->table_id);
 		if (t) {
-			printk(KERN_ERR "removing stream %p from table\n", stream);
+			printk(KERN_WARNING "removing stream %p from table\n", stream);
 			spin_lock(&t->player_lock);
 			list_del_init(&stream->table_entry);
 			t->num_play_streams--;
