@@ -1051,7 +1051,7 @@ static void end_of_stream(struct play_stream *stream);
 } while (0)
 
 #define unref_packet_stream(s) do { \
-	printk(KERN_WARNING "unref packet stream %p (%i--) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); \
+	/* printk(KERN_WARNING "unref packet stream %p (%i--) @ %s:%i\n", s, atomic_read(&(s)->refcnt), __FILE__, __LINE__); */ \
 	__unref_packet_stream(s); \
 } while (0)
 
@@ -3840,7 +3840,7 @@ static void free_packet_stream(struct play_stream_packets *stream) {
 	struct play_stream_packet *packet, *tp;
 	struct rtpengine_table *t;
 
-	printk(KERN_WARNING "freeing packet stream %p\n", stream);
+	//printk(KERN_WARNING "freeing packet stream %p\n", stream);
 
 	list_for_each_entry_safe(packet, tp, &stream->packets, list)
 		free_play_stream_packet(packet);
@@ -4011,7 +4011,7 @@ static void play_stream_send_packet(struct play_stream *stream, struct play_stre
 }
 
 static void free_play_stream(struct play_stream *s) {
-	printk(KERN_WARNING "freeing play stream %p\n", s);
+	//printk(KERN_WARNING "freeing play stream %p\n", s);
 	free_crypto_context(&s->encrypt);
 	if (s->packets)
 		unref_packet_stream(s->packets);
@@ -4458,21 +4458,23 @@ static int play_stream(struct rtpengine_table *t, const struct rtpengine_play_st
 	if (idx == -1)
 		goto out;
 
-	spin_lock(&play_stream->lock);
-
-	play_stream->start_time = ktime_get();
-	crypto_context_init(&play_stream->encrypt, &info->encrypt);
-	ret = gen_rtp_session_keys(&play_stream->encrypt, &info->encrypt);
-	if (ret)
-		goto out;
-	//printk(KERN_WARNING "start time %ld us\n", (long int) ktime_to_us(play_stream->start_time));
-
 	spin_lock(&t->player_lock);
 	list_add(&play_stream->table_entry, &t->play_streams);
 	ref_play_stream(play_stream);
 	t->num_play_streams++;
 	// XXX race between adding to list and stop/free?
 	spin_unlock(&t->player_lock);
+
+	spin_lock(&play_stream->lock);
+
+	play_stream->start_time = ktime_get();
+	crypto_context_init(&play_stream->encrypt, &info->encrypt);
+	ret = gen_rtp_session_keys(&play_stream->encrypt, &info->encrypt);
+	if (ret) {
+		spin_unlock(&play_stream->lock);
+		goto out;
+	}
+	//printk(KERN_WARNING "start time %ld us\n", (long int) ktime_to_us(play_stream->start_time));
 
 	play_stream_schedule_packet(play_stream);
 
@@ -4496,7 +4498,7 @@ static void end_of_stream(struct play_stream *stream) {
 	if (stream->table_id != -1 && !list_empty(&stream->table_entry)) {
 		t = get_table(stream->table_id);
 		if (t) {
-			printk(KERN_WARNING "removing stream %p from table\n", stream);
+			//printk(KERN_WARNING "removing stream %p from table\n", stream);
 			spin_lock(&t->player_lock);
 			list_del_init(&stream->table_entry);
 			t->num_play_streams--;
@@ -4513,7 +4515,7 @@ static void do_stop_stream(struct play_stream *stream) {
 	struct timer_thread *tt;
 	struct play_stream *old_stream;
 
-	printk(KERN_WARNING "stop stream %p\n", stream);
+	//printk(KERN_WARNING "stop stream %p\n", stream);
 
 	spin_lock(&stream->lock);
 
@@ -4526,19 +4528,20 @@ static void do_stop_stream(struct play_stream *stream) {
 		spin_lock(&tt->tree_lock);
 
 		if (tt->scheduled == stream) {
-			printk(KERN_WARNING "stream %p was scheduled\n", stream);
+			//printk(KERN_WARNING "stream %p was scheduled\n", stream);
 			tt->scheduled = NULL;
 			unref_play_stream(stream);
 		}
 		else {
 			old_stream = btree_lookup64(&tt->tree, stream->tree_index);
 			if (old_stream == stream) {
-				printk(KERN_WARNING "stream %p was in tree\n", stream);
+				//printk(KERN_WARNING "stream %p was in tree\n", stream);
 				btree_remove64(&tt->tree, stream->tree_index);
 				unref_play_stream(stream);
 			}
-			else
-				printk(KERN_ERR "stream %p not scheduled!\n", stream);
+			else {
+				//printk(KERN_ERR "stream %p not scheduled!\n", stream);
+			}
 		}
 
 		spin_unlock(&tt->tree_lock);
