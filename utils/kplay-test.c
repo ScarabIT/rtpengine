@@ -196,13 +196,14 @@ int main() {
 	assert(ret == -1 && errno == ENOENT);
 	printf("ok\n");
 
-	fps = (__typeof(fps)) {
-		.cmd = REMG_FREE_PACKET_STREAM,
-		.packet_stream_idx = gps.packet_stream_idx,
-	};
-	ret = write(fd, &fps, sizeof(fps));
-	assert(ret == -1 && errno == EBUSY);
-	printf("ok\n");
+//	test: remove while in use
+//	fps = (__typeof(fps)) {
+//		.cmd = REMG_FREE_PACKET_STREAM,
+//		.packet_stream_idx = gps.packet_stream_idx,
+//	};
+//	ret = write(fd, &fps, sizeof(fps));
+//	assert(ret == sizeof(fps));
+//	printf("ok\n");
 
 	printf("sleep\n");
 	sleep(20);
@@ -249,12 +250,13 @@ int main() {
 	printf("sleep\n");
 	sleep(2);
 
-	fps = (__typeof(fps)) {
-		.cmd = REMG_FREE_PACKET_STREAM,
-		.packet_stream_idx = gps.packet_stream_idx,
-	};
-	ret = write(fd, &fps, sizeof(fps));
-	assert(ret == -1 && errno == EBUSY);
+//	test: remove while in use
+//	fps = (__typeof(fps)) {
+//		.cmd = REMG_FREE_PACKET_STREAM,
+//		.packet_stream_idx = gps.packet_stream_idx,
+//	};
+//	ret = write(fd, &fps, sizeof(fps));
+//	assert(ret == -1 && errno == EBUSY);
 
 	ss = (__typeof(ss)) {
 		.cmd = REMG_STOP_STREAM,

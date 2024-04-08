@@ -4615,6 +4615,7 @@ out:
 
 	write_lock(&stream->lock);
 	idx = stream->idx;
+	stream->table_id = -1;
 	write_unlock(&stream->lock);
 
 	if (idx != -1) {
@@ -4631,7 +4632,6 @@ out:
 		list_del_init(&stream->table_entry);
 		t->num_packet_streams--;
 		spin_unlock(&t->player_lock);
-		table_put(t);
 		unref_packet_stream(stream);
 	}
 
