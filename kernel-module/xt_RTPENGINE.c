@@ -3813,8 +3813,8 @@ static void free_packet_stream(struct play_stream_packets *stream) {
 
 	printk(KERN_WARNING "freeing packet stream %p\n", stream);
 
-//	list_for_each_entry_safe(packet, tp, &stream->packets, list)
-//		free_play_stream_packet(packet);
+	list_for_each_entry_safe(packet, tp, &stream->packets, list)
+		free_play_stream_packet(packet);
 
 	if (stream->table_id != -1 && !list_empty(&stream->table_entry)) {
 		t = get_table(stream->table_id);
@@ -4033,6 +4033,13 @@ static int timer_worker(void *p) {
 			now = ktime_get();
 
 			spin_lock(&stream->lock);
+
+			if (!stream->timer_thread) {
+				// we've been descheduled
+				spin_unlock(&stream->lock);
+				unref_play_stream(stream);
+				continue;
+			}
 
 			stream->timer_thread = NULL;
 			packet = stream->position;
@@ -4487,6 +4494,8 @@ static void do_stop_stream(struct play_stream *stream) {
 	end_of_stream(stream);
 
 	tt = stream->timer_thread;
+	stream->timer_thread = NULL;
+
 	if (tt) {
 		spin_lock(&tt->tree_lock);
 

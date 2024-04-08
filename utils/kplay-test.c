@@ -289,6 +289,8 @@ int main() {
 	assert(ret == sizeof(fps));
 	printf("free ok\n");
 
+	sleep(3);
+
 	fps = (__typeof(fps)) {
 		.cmd = REMG_FREE_PACKET_STREAM,
 		.packet_stream_idx = gps.packet_stream_idx,
@@ -296,7 +298,12 @@ int main() {
 	ret = write(fd, &fps, sizeof(fps));
 	assert(ret == -1 && errno == ENOENT);
 
+	sleep(3);
+
+	printf("closing fd\n");
 	close(fd);
+
+	sleep(3);
 
 	fd = open("/proc/rtpengine/control", O_WRONLY);
 	assert(fd >= 0);
