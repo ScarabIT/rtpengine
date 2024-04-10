@@ -85,7 +85,7 @@ int main() {
 	}
 	printf("packets ok\n");
 
-	for (int i = 0; i < 4096; i++) {
+	for (int i = 0; i < 8192; i++) {
 		struct rtpengine_command_play_stream ps = {
 			.cmd = REMG_PLAY_STREAM,
 			.info = {

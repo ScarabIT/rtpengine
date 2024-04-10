@@ -1070,11 +1070,15 @@ static void clear_table_player(struct rtpengine_table *t) {
 	unsigned int idx;
 
 	list_for_each_entry_safe(stream, ts, &t->play_streams, table_entry) {
+		printk(KERN_WARNING "%i lock %i\n", current->pid, __LINE__);
 		spin_lock(&stream->lock);
+		printk(KERN_WARNING "%i lock %i\n", current->pid, __LINE__);
 		stream->table_id = -1;
 		idx = stream->idx;
 		spin_unlock(&stream->lock);
+		printk(KERN_WARNING "%i lock %i\n", current->pid, __LINE__);
 		write_lock(&media_player_lock);
+		printk(KERN_WARNING "%i lock %i\n", current->pid, __LINE__);
 		if (play_streams[idx] == stream) {
 			play_streams[idx] = NULL;
 			unref_play_stream(stream);
@@ -1085,11 +1089,15 @@ static void clear_table_player(struct rtpengine_table *t) {
 	}
 
 	list_for_each_entry_safe(packets, tp, &t->packet_streams, table_entry) {
+		printk(KERN_WARNING "%i lock %i\n", current->pid, __LINE__);
 		write_lock(&packets->lock);
+		printk(KERN_WARNING "%i lock %i\n", current->pid, __LINE__);
 		packets->table_id = -1;
 		idx = packets->idx;
 		write_unlock(&packets->lock);
+		printk(KERN_WARNING "%i lock %i\n", current->pid, __LINE__);
 		write_lock(&media_player_lock);
+		printk(KERN_WARNING "%i lock %i\n", current->pid, __LINE__);
 		if (stream_packets[idx] == packets) {
 			stream_packets[idx] = NULL;
 			unref_packet_stream(packets);
@@ -3848,7 +3856,9 @@ static void free_packet_stream(struct play_stream_packets *stream) {
 	if (stream->table_id != -1 && !list_empty(&stream->table_entry)) {
 		t = get_table(stream->table_id);
 		if (t) {
+			printk(KERN_WARNING "%i lock %i\n", current->pid, __LINE__);
 			spin_lock(&t->player_lock);
+			printk(KERN_WARNING "%i lock %i\n", current->pid, __LINE__);
 			list_del_init(&stream->table_entry);
 			t->num_packet_streams--;
 			spin_unlock(&t->player_lock);
@@ -4517,7 +4527,9 @@ static void do_stop_stream(struct play_stream *stream) {
 
 	//printk(KERN_WARNING "stop stream %p\n", stream);
 
+	printk(KERN_WARNING "%i lock %i\n", current->pid, __LINE__);
 	spin_lock(&stream->lock);
+	printk(KERN_WARNING "%i lock %i\n", current->pid, __LINE__);
 
 	end_of_stream(stream);
 
@@ -4525,7 +4537,9 @@ static void do_stop_stream(struct play_stream *stream) {
 	stream->timer_thread = NULL;
 
 	if (tt) {
+		printk(KERN_WARNING "%i lock %i\n", current->pid, __LINE__);
 		spin_lock(&tt->tree_lock);
+		printk(KERN_WARNING "%i lock %i\n", current->pid, __LINE__);
 
 		if (tt->scheduled == stream) {
 			//printk(KERN_WARNING "stream %p was scheduled\n", stream);
