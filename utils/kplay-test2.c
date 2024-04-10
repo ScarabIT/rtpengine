@@ -85,7 +85,9 @@ int main() {
 	}
 	printf("packets ok\n");
 
-	for (int i = 0; i < 8192; i++) {
+	unsigned play_idx[4096];
+
+	for (int i = 0; i < sizeof(play_idx)/sizeof(*play_idx); i++) {
 		struct rtpengine_command_play_stream ps = {
 			.cmd = REMG_PLAY_STREAM,
 			.info = {
@@ -118,12 +120,28 @@ int main() {
 		ret = read(fd, &ps, sizeof(ps));
 		assert(ret == sizeof(ps));
 		printf("play stream idx %u\n", ps.play_idx);
+		play_idx[i] = ps.play_idx;
 
 		usleep(50000);
 	}
 
 	printf("sleep\n");
 	sleep(10);
+
+	printf("poll stats\n");
+	for (int rep = 0; rep < 2000; rep++) {
+		for (int i = 0; i < sizeof(play_idx)/sizeof(*play_idx); i++) {
+			struct rtpengine_command_play_stream_stats pss = {
+				.cmd = REMG_PLAY_STREAM_STATS,
+				.play_idx = play_idx[i],
+			};
+			ret = read(fd, &pss, sizeof(pss));
+			if (ret != sizeof(pss))
+				printf("%zi %s\n", ret, strerror(errno));
+			assert(ret == sizeof(pss));
+			usleep(10000);
+		}
+	}
 
 	printf("close fd, sleep\n");
 	sleep(10);
