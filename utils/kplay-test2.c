@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <stdbool.h>
 #include "../kernel-module/xt_RTPENGINE.h"
 
 int main() {
@@ -115,6 +116,7 @@ int main() {
 				},
 				.packet_stream_idx = gps.packet_stream_idx,
 				.repeat = 50,
+				.remove_at_end = false,
 			},
 		};
 		ret = read(fd, &ps, sizeof(ps));
@@ -129,16 +131,16 @@ int main() {
 	sleep(10);
 
 	printf("poll stats\n");
-	for (int rep = 0; rep < 2000; rep++) {
+	for (int rep = 0; rep < 2; rep++) {
 		for (int i = 0; i < sizeof(play_idx)/sizeof(*play_idx); i++) {
 			struct rtpengine_command_play_stream_stats pss = {
 				.cmd = REMG_PLAY_STREAM_STATS,
 				.play_idx = play_idx[i],
 			};
 			ret = read(fd, &pss, sizeof(pss));
-			if (ret != sizeof(pss))
-				printf("%i %i %zi %s\n", i, rep, ret, strerror(errno));
-			//assert(ret == sizeof(pss));
+			//if (ret != sizeof(pss))
+				//printf("%i %i %zi %s\n", i, rep, ret, strerror(errno));
+			assert(ret == sizeof(pss));
 			usleep(10000);
 		}
 	}

@@ -4184,17 +4184,21 @@ static int timer_worker(void *p) {
 					stream = NULL;
 				}
 				else {
-					// end of stream, remove it
-					// XXX don't remove, keep idx alive for get_stats
-					end_of_stream(stream);
-					_spin_unlock(&stream->lock);
-					_write_lock(&media_player_lock);
-					if (play_streams[stream->idx] == stream) {
-						play_streams[stream->idx] = NULL;
-						unref_play_stream(stream);
+					// end of stream
+					if (!stream->info.remove_at_end)
+						_spin_unlock(&stream->lock);
+					else {
+						// remove it
+						end_of_stream(stream);
+						_spin_unlock(&stream->lock);
+						_write_lock(&media_player_lock);
+						if (play_streams[stream->idx] == stream) {
+							play_streams[stream->idx] = NULL;
+							unref_play_stream(stream);
+						}
+						// else log error?
+						_write_unlock(&media_player_lock);
 					}
-					// else log error?
-					_write_unlock(&media_player_lock);
 					unref_play_stream(stream);
 					stream = NULL;
 				}
