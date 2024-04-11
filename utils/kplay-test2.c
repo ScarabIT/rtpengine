@@ -137,8 +137,8 @@ int main() {
 			};
 			ret = read(fd, &pss, sizeof(pss));
 			if (ret != sizeof(pss))
-				printf("%zi %s\n", ret, strerror(errno));
-			assert(ret == sizeof(pss));
+				printf("%i %i %zi %s\n", i, rep, ret, strerror(errno));
+			//assert(ret == sizeof(pss));
 			usleep(10000);
 		}
 	}

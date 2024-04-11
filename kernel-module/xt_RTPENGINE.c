@@ -4739,21 +4739,27 @@ static int play_stream_stats(struct rtpengine_table *t, unsigned int num, struct
 	int ret = 0;
 
 	_read_lock(&media_player_lock);
-	if (num >= num_play_streams)
+	if (num >= num_play_streams) {
+		_read_unlock(&media_player_lock);
 		ret = -ERANGE;
+	}
 	else {
 		stream = play_streams[num];
-		if (!stream)
+		if (!stream) {
+			_read_unlock(&media_player_lock);
 			ret = -ENOENT;
+		}
 		else {
-			_spin_lock(&stream->lock); // XXX nested lock ok?
+			ref_play_stream(stream);
+			_read_unlock(&media_player_lock);
+			_spin_lock(&stream->lock);
 			*stats = stream->stats;
 			memset(&stream->stats, 0, sizeof(stream->stats));
 			_spin_unlock(&stream->lock);
+			unref_play_stream(stream);
 		}
 	}
 
-	_read_unlock(&media_player_lock);
 
 	return ret;
 }
