@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <stdbool.h>
 #include "../kernel-module/xt_RTPENGINE.h"
 
 int main() {
@@ -174,6 +175,7 @@ int main() {
 			},
 			.packet_stream_idx = gps.packet_stream_idx,
 			.repeat = 3,
+			.remove_at_end = true,
 		},
 	};
 	ret = read(fd, &ps, sizeof(ps));

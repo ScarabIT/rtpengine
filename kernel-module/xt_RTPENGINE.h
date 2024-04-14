@@ -225,7 +225,7 @@ struct rtpengine_play_stream_info {
 	struct rtpengine_srtp		encrypt;
 	unsigned int			packet_stream_idx;
 	int				repeat;
-	bool				remove_at_end;
+	int				remove_at_end;
 };
 
 struct rtpengine_play_stream_packet_info {

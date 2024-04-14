@@ -3980,12 +3980,13 @@ static void play_stream_insert_packet_to_tree(struct play_stream *stream, struct
 		{ }
 	stream->tree_index = -1 * ktime_to_ns(scheduled) + offset;
 	btree_insert64(&tt->tree, stream->tree_index, stream, GFP_ATOMIC);
-	// XXX refcount this (stream entry)? ^
 }
 
 // stream must be locked, started, and non-empty
 // tree must not be locked
-static void play_stream_schedule_packet_to_thread(struct play_stream *stream, struct timer_thread *tt, bool sleeper) {
+static void play_stream_schedule_packet_to_thread(struct play_stream *stream, struct timer_thread *tt,
+		bool reschedule)
+{
 	ktime_t scheduled;
 	struct play_stream_packet *packet;
 
@@ -3998,35 +3999,27 @@ static void play_stream_schedule_packet_to_thread(struct play_stream *stream, st
 
 	_spin_lock(&tt->tree_lock);
 
-	// check against predetermined next entry if there is one
-	if (tt->scheduled) {
-		if (ktime_before(scheduled, tt->scheduled_at)) {
-			// we're after, schedule in tree
-			//printk(KERN_WARNING "inserting into tree\n");
-			play_stream_insert_packet_to_tree(stream, tt, scheduled);
-			ref_play_stream(stream);
-			if (sleeper)
-				tt->tree_added = true;
-		}
-		else {
-			// we are next, return previous one to tree
-			//printk(KERN_WARNING "putting as next, returning previous to tree\n");
+	if (reschedule && !tt->scheduled && !tt->tree_added) {
+		// we know we are next. remember this
+		tt->scheduled = stream;
+		ref_play_stream(stream);
+		tt->scheduled_at = scheduled;
+	}
+	else {
+		// all other cases: add to tree, or put as next
+		if (tt->scheduled && ktime_before(scheduled, tt->scheduled_at)) {
+			// we are next. return previous entry to tree and put us as next
 			play_stream_insert_packet_to_tree(tt->scheduled, tt, tt->scheduled_at);
 			tt->scheduled = stream;
 			ref_play_stream(stream);
 			tt->scheduled_at = scheduled;
-			if (!sleeper)
-				tt->tree_added = true;
 		}
-	}
-	else {
-		// nothing scheduled yet, we are next
-		//printk(KERN_WARNING "putting as next\n");
-		tt->scheduled = stream;
-		ref_play_stream(stream);
-		tt->scheduled_at = scheduled;
-		if (!sleeper)
-			tt->tree_added = true;
+		else {
+			// insert into tree
+			play_stream_insert_packet_to_tree(stream, tt, scheduled);
+			ref_play_stream(stream);
+		}
+		tt->tree_added = true;
 	}
 
 	stream->timer_thread = tt;
@@ -4176,8 +4169,7 @@ static int timer_worker(void *p) {
 				packets = NULL;
 
 				if (stream->position) {
-					// XXX schedule on same CPU
-					play_stream_schedule_packet(stream);
+					play_stream_schedule_packet_to_thread(stream, tt, false);
 					sleeptime_ns = 0; // loop and get next packet from tree
 					_spin_unlock(&stream->lock);
 					unref_play_stream(stream);
