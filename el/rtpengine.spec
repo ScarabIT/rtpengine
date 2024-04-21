@@ -8,7 +8,7 @@ URL:		https://github.com/sipwise/rtpengine
 Source0:	https://github.com/sipwise/rtpengine/archive/%{name}-%{version}.tar.gz
 Conflicts:	%{name}-kernel < %{version}-%{release}
 
-%global with_transcoding 1
+%global with_transcoding 0
 %{?_unitdir:%define has_systemd_dirs 1}
 
 BuildRequires:	gcc make pkgconfig redhat-rpm-config
